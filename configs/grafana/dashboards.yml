@@ -1,0 +1,15 @@
+apiVersion: 1
+
+providers:
+  - name: JVM micrometer
+    type: file
+    options:
+      path: /etc/grafana/provisioning/dashboards/dash_micromter.json
+  - name: Spring 2
+    type: file
+    options:
+      path: /etc/grafana/provisioning/dashboards/dash_spring2.json
+  - name: Spring 3
+    type: file
+    options:
+      path: /etc/grafana/provisioning/dashboards/dash_spring3.json

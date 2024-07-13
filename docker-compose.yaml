@@ -1,0 +1,95 @@
+# docker compose up -d
+# docker-compose up -d dev-service - up only only service
+# docker-compose down -v
+# docker network ls
+
+services:
+
+  # todo: connect to container in global network, to connect from outside prometheus
+  # todo: flink
+  # todo: flink to prometheus
+  # todo: setup flink to connect with idea
+  # todo: elk stack
+
+  # app imaged before - docker build -t replace_me/replace_me -f <path_to_dockerfile>
+  # dev-service:
+  #   image: replace_me/replace_me
+  #   container_name: dev-service
+  #   ports:
+  #     - 8080:8080
+  #   environment:
+  #     SPRING_APPLICATION_NAME: "replace_me"
+  #     JAVA_OPTS: 
+  
+  # datasources localhost:8080, dev-service:8080
+  prometheus:
+    image: prom/prometheus
+    container_name: prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+    volumes:
+      - ./configs/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus:/var/lib/prometheus
+    ports:
+      - 9090:9090
+    restart: no
+
+  grafana:
+    image: grafana/grafana
+    container_name: grafana
+    ports:
+      - 3000:3000
+    volumes:
+      - ./configs/grafana/datasources.yml:/etc/grafana/provisioning/datasources/grafana_datasources.yml
+      - ./configs/grafana/dashboards.yml:/etc/grafana/provisioning/dashboards/grafana_dashboards.yml
+      - ./configs/grafana/dash_micrometer.json:/etc/grafana/provisioning/dashboards/dash_micromter.json
+      - ./configs/grafana/dash_spring2.json:/etc/grafana/provisioning/dashboards/dash_spring2.json
+      - ./configs/grafana/dash_spring3.json:/etc/grafana/provisioning/dashboards/dash_spring3.json
+      - grafana:/var/lib/grafana
+    environment:
+      - GF_PATHS_CONFIG=/etc/grafana/grafana.ini
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLe=admin
+    restart: no
+
+  zookeeper:
+    image: wurstmeister/zookeeper
+    container_name: zookeeper
+    ports:
+      - 2181:2181
+    restart: no
+  
+  kafka:
+    image: wurstmeister/kafka
+    container_name: kafka
+    ports:
+      - 9092:9092
+    environment:
+      KAFKA_ADVERTISED_HOST_NAME: 127.0.0.1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_CREATE_TOPICS: "TEST:4:1"
+    volumes:
+      - kafka:/data
+    restart: no
+  
+  psql:
+    image: postgres:latest
+    container_name: postgres
+    ports:
+      - 5432:5432
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin
+      POSTGRES_DB: postgres
+    volumes:
+      - database:/var/lib/postgresql/data/
+    restart: no
+
+volumes:
+  prometheus:
+  grafana:
+  kafka:
+  database:
+  
