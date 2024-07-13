@@ -1,48 +1,72 @@
-# docker compose up -d
-# docker-compose up -d dev-service - up only only service
-# docker-compose down -v
-# docker network ls
+# todo: connect to container in global network, to connect from outside prometheus
+# todo: flink
+# todo: flink to prometheus
+# todo: setup flink to connect with idea
+#
+# todo: script for docker file app created outside compose, connect to network
+# todo: elasticsearch-setup in logs not creating users -> fix it
+
+name: docker-dev-environments
+volumes:
+  prometheus:
+    name: dev-env-prometheus
+  grafana:
+    name: dev-env-grafana
+  kafka:
+    name: dev-env-kafka
+  postgres:
+    name: dev-env-postgres
+  elasticsearch:
+    name: dev-env-elasticsearch
+
+networks:
+  default:
+    name: docker-dev-environments_network
+    driver: bridge
+    external: false
+  elk:
+    name: docker-dev-environments-elk_network
+    driver: bridge
 
 services:
 
-  # todo: connect to container in global network, to connect from outside prometheus
-  # todo: flink
-  # todo: flink to prometheus
-  # todo: setup flink to connect with idea
-  # todo: elk stack
+############################### DEVELOP-APPS ######################################
+  dev-service:
+    # - set before built image or write build stage
+    # - another way run built image with dev-env_network
+    profiles: ['develop']
+    container_name: dev-service
+    image: replace_me/replace_me
+    ports:
+      - 8080:8080
+    environment:
+      SPRING_APPLICATION_NAME: "replace_me"
+      JAVA_OPTS:
 
-  # app imaged before - docker build -t replace_me/replace_me -f <path_to_dockerfile>
-  # dev-service:
-  #   image: replace_me/replace_me
-  #   container_name: dev-service
-  #   ports:
-  #     - 8080:8080
-  #   environment:
-  #     SPRING_APPLICATION_NAME: "replace_me"
-  #     JAVA_OPTS: 
-  
-  # datasources localhost:8080, dev-service:8080
+############################### PROMETHEUS-GRAFANA ################################
   prometheus:
-    image: prom/prometheus
+    profiles: ['prometheus-grafana']
     container_name: prometheus
+    image: prom/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
     volumes:
-      - ./configs/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./configs/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml  # datasources localhost:8080, dev-service:8080
       - prometheus:/var/lib/prometheus
     ports:
       - 9090:9090
     restart: no
 
   grafana:
-    image: grafana/grafana
+    profiles: ['prometheus-grafana']
     container_name: grafana
+    image: grafana/grafana
     ports:
       - 3000:3000
     volumes:
       - ./configs/grafana/datasources.yml:/etc/grafana/provisioning/datasources/grafana_datasources.yml
       - ./configs/grafana/dashboards.yml:/etc/grafana/provisioning/dashboards/grafana_dashboards.yml
-      - ./configs/grafana/dash_micrometer.json:/etc/grafana/provisioning/dashboards/dash_micromter.json
+      - ./configs/grafana/dash_micrometer.json:/etc/grafana/provisioning/dashboards/dash_micrometer.json
       - ./configs/grafana/dash_spring2.json:/etc/grafana/provisioning/dashboards/dash_spring2.json
       - ./configs/grafana/dash_spring3.json:/etc/grafana/provisioning/dashboards/dash_spring3.json
       - grafana:/var/lib/grafana
@@ -54,16 +78,19 @@ services:
       - GF_AUTH_ANONYMOUS_ORG_ROLe=admin
     restart: no
 
+############################### KAFKA #############################################
   zookeeper:
-    image: wurstmeister/zookeeper
+    profiles: ['kafka']
     container_name: zookeeper
+    image: wurstmeister/zookeeper
     ports:
       - 2181:2181
     restart: no
-  
+
   kafka:
-    image: wurstmeister/kafka
+    profiles: ['kafka']
     container_name: kafka
+    image: wurstmeister/kafka
     ports:
       - 9092:9092
     environment:
@@ -73,10 +100,12 @@ services:
     volumes:
       - kafka:/data
     restart: no
-  
+
+############################### DATABASE ##########################################
   psql:
-    image: postgres:latest
+    profiles: ['postgres']
     container_name: postgres
+    image: postgres:latest
     ports:
       - 5432:5432
     environment:
@@ -84,12 +113,104 @@ services:
       POSTGRES_PASSWORD: admin
       POSTGRES_DB: postgres
     volumes:
-      - database:/var/lib/postgresql/data/
+      - postgres:/var/lib/postgresql/data/
     restart: no
 
-volumes:
-  prometheus:
-  grafana:
-  kafka:
-  database:
-  
+############################### ELK-STACK #########################################
+  elasticsearch-setup:
+    profiles: ['elk-setup','elk']       # set both profiles for start
+    container_name: elasticsearch-setup
+    build:
+      context: configs/elk/setup/
+      args:
+        ELASTIC_VERSION: ${ELASTIC_VERSION}
+    init: true
+    volumes:
+      #: z - lets you share content from one container with another
+      #: ro - what doing
+      - ./configs/elk/setup/entrypoint.sh:/entrypoint.sh:ro,Z
+      - ./configs/elk/setup/lib.sh:/lib.sh:ro,Z
+      - ./configs/elk/setup/roles:/roles:ro,Z
+    environment:
+      ELASTIC_PASSWORD: ${ELASTIC_PASSWORD:-}
+      LOGSTASH_INTERNAL_PASSWORD: ${LOGSTASH_INTERNAL_PASSWORD:-}
+      KIBANA_SYSTEM_PASSWORD: ${KIBANA_SYSTEM_PASSWORD:-}
+      METRICBEAT_INTERNAL_PASSWORD: ${METRICBEAT_INTERNAL_PASSWORD:-}
+      FILEBEAT_INTERNAL_PASSWORD: ${FILEBEAT_INTERNAL_PASSWORD:-}
+      HEARTBEAT_INTERNAL_PASSWORD: ${HEARTBEAT_INTERNAL_PASSWORD:-}
+      MONITORING_INTERNAL_PASSWORD: ${MONITORING_INTERNAL_PASSWORD:-}
+      BEATS_SYSTEM_PASSWORD: ${BEATS_SYSTEM_PASSWORD:-}
+    networks:
+      - elk
+    depends_on:
+      - elasticsearch
+
+  elasticsearch:
+    profiles: ['elk']
+    container_name: elasticsearch
+    build:
+      context: configs/elk/elasticsearch/
+      args:
+        ELASTIC_VERSION: ${ELASTIC_VERSION}
+    volumes:
+      - ./configs/elk/elasticsearch/config/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml:ro,Z
+      - elasticsearch:/usr/share/elasticsearch/data:Z
+    ports:
+      - 9200:9200
+      - 9300:9300
+    environment:
+      node.name: elasticsearch
+      ES_JAVA_OPTS: -Xms512m -Xmx512m
+      # Bootstrap password.
+      # Used to initialize the keystore during the initial startup of
+      # Elasticsearch. Ignored on subsequent runs.
+      ELASTIC_PASSWORD: ${ELASTIC_PASSWORD:-}
+      # Use single node discovery in order to disable production mode and avoid bootstrap checks.
+      # see: https://www.elastic.co/guide/en/elasticsearch/reference/current/bootstrap-checks.html
+      discovery.type: single-node
+    networks:
+      - elk
+    restart: no
+
+  logstash:
+    profiles: ['elk']
+    container_name: logstash
+    build:
+      context: configs/elk/logstash/
+      args:
+        ELASTIC_VERSION: ${ELASTIC_VERSION}
+    volumes:
+      - ./configs/elk/logstash/config/logstash.yml:/usr/share/logstash/config/logstash.yml:ro,Z
+      - ./configs/elk/logstash/pipeline:/usr/share/logstash/pipeline:ro,Z
+    ports:
+      - 5044:5044
+      - 50000:50000/tcp
+      - 50000:50000/udp
+      - 9600:9600
+    environment:
+      LS_JAVA_OPTS: -Xms256m -Xmx256m
+      LOGSTASH_INTERNAL_PASSWORD: ${LOGSTASH_INTERNAL_PASSWORD:-}
+    networks:
+      - elk
+    depends_on:
+      - elasticsearch
+    restart: no
+
+  kibana:
+    profiles: ['elk']
+    container_name: kibana
+    build:
+      context: configs/elk/kibana/
+      args:
+        ELASTIC_VERSION: ${ELASTIC_VERSION}
+    volumes:
+      - ./configs/elk/kibana/config/kibana.yml:/usr/share/kibana/config/kibana.yml:ro,Z
+    ports:
+      - 5601:5601
+    environment:
+      KIBANA_SYSTEM_PASSWORD: ${KIBANA_SYSTEM_PASSWORD:-}
+    networks:
+      - elk
+    depends_on:
+      - elasticsearch
+    restart: no

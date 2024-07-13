@@ -4,7 +4,7 @@ providers:
   - name: JVM micrometer
     type: file
     options:
-      path: /etc/grafana/provisioning/dashboards/dash_micromter.json
+      path: /etc/grafana/provisioning/dashboards/dash_micrometer.json
   - name: Spring 2
     type: file
     options:
