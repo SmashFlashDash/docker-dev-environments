@@ -6,7 +6,7 @@ This is docker-compose preset with:
 - Grafana. Security off, exist some Spring dashboards.
 - Postgres
 - Kafka + Zookeeper
-- Flink
+- Flink, forked https://github.com/mbode/flink-prometheus-example
 - ELK stack, forked https://github.com/deviantony/docker-elk
 
 ## RUN
@@ -16,12 +16,39 @@ Run services selectively by profiles:
 - `docker compose --profile prometheus-grafana up -d`
 - `docker compose --profile kafka up -d`
 - `docker compose --profile postgres up -d`
+- `docker compose --profile flink build` - Build Flink image.  
+- `docker compose --profile flink up -d` - Flink cluster: 1 jobmanger, 1 taskamanger.  
+  Taskmanagers can be scaled `docker compose scale flink-taskmanager=<N>` and so in compose file.
+  To submit a job to a Session cluster a few ways:
+  - TODO: from IJIdea via Flink Monitoring plugin, set it up, and run.
+  - TODO: build jar and deploy by bash using flink API.
+  - via the command line, you can either use Flink CLI on the host if it is installed:
+    ```shell
+    $ ./bin/flink run --detached --class ${JOB_CLASS_NAME} /job.jar
+    ```
+  - from container, copy the JAR to the JobManager container and submit the job using the CLI from there, for example:
+    Example `docker exec flink-jobmanager  flink run --detached /opt/flink/examples/streaming/WordCount.jar`
+    ```shell
+    JOB_CLASS_NAME="com.job.ClassName"
+    JM_CONTAINER=$(docker ps --filter name=jobmanager --format={{.ID}}))
+    docker cp path/to/jar "${JM_CONTAINER}":/job.jar
+    docker exec -t -i "${JM_CONTAINER}" flink run -d -c ${JOB_CLASS_NAME} /job.jar
+    ```
+- `docker compose --profile flink --profile flink-sql up -d` - Flink sql-client  
 - `docker compose --profile elk-setup --profile elk up -d`
 - `docker compose --profile develop up -d`
 
-http://localhost:5601/ - kibana ui
-http://localhost:3000/ - grafana
+
+## UI
 http://localhost:9090/ - prometheus
+http://localhost:3000/ - grafana, sign in for edit dashboards
+http://localhost:8081/ - flink jobmanager ui
+http://localhost:5601/ - kibana ui
+
+
+## TROUBLE_SHOOT
+Tune `.wslconfig` for manage resources https://learn.microsoft.com/en-us/windows/wsl/wsl-config#configure-global-options-with-wslconfig
+
 
 ## USEFUL COMMANDS
 `docker login`  
@@ -34,4 +61,7 @@ http://localhost:9090/ - prometheus
 `docker network ls`  
 `docker network prune`  
 `docker system prune -a`  
+`docker compose --profile flink --profile prometheus-grafana up -d`  
+`docker-compose --profile build` - rebuild image, but better run `docker-compose --profile flink down -v`  
+`docker image history --no-trunc flink-built > tmp.txt` - watch dockerfile history  
 

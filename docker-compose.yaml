@@ -16,6 +16,8 @@ volumes:
     name: dev-env-kafka
   postgres:
     name: dev-env-postgres
+  flink-state:
+    name: dev-env-flink-state
   elasticsearch:
     name: dev-env-elasticsearch
 
@@ -52,6 +54,7 @@ services:
       - '--config.file=/etc/prometheus/prometheus.yml'
     volumes:
       - ./configs/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml  # datasources localhost:8080, dev-service:8080
+      - ./configs/prometheus/flink.rules.yml:/etc/prometheus/flink.rules.yml
       - prometheus:/var/lib/prometheus
     ports:
       - 9090:9090
@@ -69,6 +72,8 @@ services:
       - ./configs/grafana/dash_micrometer.json:/etc/grafana/provisioning/dashboards/dash_micrometer.json
       - ./configs/grafana/dash_spring2.json:/etc/grafana/provisioning/dashboards/dash_spring2.json
       - ./configs/grafana/dash_spring3.json:/etc/grafana/provisioning/dashboards/dash_spring3.json
+      - ./configs/grafana/dash_flink.json:/etc/grafana/provisioning/dashboards/dash_flink.json
+      - ./configs/grafana/dash_flink_task.json:/etc/grafana/provisioning/dashboards/dash_flink_task.json
       - grafana:/var/lib/grafana
     environment:
       - GF_PATHS_CONFIG=/etc/grafana/grafana.ini
@@ -116,6 +121,73 @@ services:
       - postgres:/var/lib/postgresql/data/
     restart: no
 
+############################### FLINK #############################################
+  # todo:
+  # - add volumes
+  # - connect flink monitoring plugin
+  # - deploy jar, and run job by curl or what?
+
+  flink-jobmanager:
+    profiles: ['flink']
+    container_name: flink-jobmanager
+    # image: flink:${FLINK_VERSION} # need built custom image for apply configs/flink/conf/flink-conf.yaml
+    image: flink-built
+    build:
+      context: ./configs/flink/
+      dockerfile: Dockerfile
+      args:
+        FLINK_VERSION: ${FLINK_VERSION}
+    ports:
+      - 8081:8081
+    command: jobmanager
+    volumes:
+      - flink-state:/state
+    environment:
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: flink-jobmanager
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 500M
+    restart: no
+
+  flink-taskmanager:
+    scale: 1
+    profiles: ['flink']
+    depends_on: ['flink-jobmanager']
+    # image: flink:${FLINK_VERSION} # need built custom image for apply configs/flink/conf/flink-conf.yaml
+    image: flink-built
+    command: taskmanager
+    volumes:
+      - flink-state:/state
+    environment:
+      - |
+        FLINK_PROPERTIES=
+        state.checkpoints.dir: file:///state
+        jobmanager.rpc.address: flink-jobmanager
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 1G
+    restart: no
+
+  flink-sql-client:
+    profiles: [flink-sql]
+    container_name: flink-sql-client
+    image: flink-built
+    command: bin/sql-client.sh
+    depends_on:
+      - flink-jobmanager
+    environment:
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: flink-jobmanager
+        rest.address: flink-jobmanager
+    restart: no
+
 ############################### ELK-STACK #########################################
   elasticsearch-setup:
     profiles: ['elk-setup','elk']       # set both profiles for start
@@ -148,6 +220,7 @@ services:
   elasticsearch:
     profiles: ['elk']
     container_name: elasticsearch
+    image: logstash-built
     build:
       context: configs/elk/elasticsearch/
       args:
@@ -175,6 +248,7 @@ services:
   logstash:
     profiles: ['elk']
     container_name: logstash
+    image: logstash-built
     build:
       context: configs/elk/logstash/
       args:
@@ -199,6 +273,7 @@ services:
   kibana:
     profiles: ['elk']
     container_name: kibana
+    image: logstash-built
     build:
       context: configs/elk/kibana/
       args:

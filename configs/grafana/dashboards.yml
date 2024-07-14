@@ -13,3 +13,11 @@ providers:
     type: file
     options:
       path: /etc/grafana/provisioning/dashboards/dash_spring3.json
+  - name: Flink
+    type: file
+    options:
+      path: /etc/grafana/provisioning/dashboards/dash_flink.json
+  - name: Flink Taskmanger
+    type: file
+    options:
+      path: /etc/grafana/provisioning/dashboards/dash_flink_task.json

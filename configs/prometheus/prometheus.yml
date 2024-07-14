@@ -3,6 +3,9 @@ global:
   evaluation_interval: 5s # Evaluate rules every 15 seconds. The default is every 1 minute.
   # scrape_timeout is set to the global default (10s)
 
+rule_files:
+  - flink.rules.yml
+
 scrape_configs:
   - job_name: 'App localhost'
     metrics_path: '/actuator/prometheus'
@@ -18,3 +21,10 @@ scrape_configs:
       - targets: ['dev-service:8080']  # by name of container in bridge network
         labels:
           application: 'App docker'
+  - job_name: 'flink-docker'
+    static_configs:
+      - targets:
+        - flink-jobmanager:9249
+        - docker-dev-environments-flink-taskmanager-1:9249
+        - docker-dev-environments-flink-taskmanager-2:9249
+  # todo: add  relabel_configs for flink-taskmanager scale
