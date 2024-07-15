@@ -162,6 +162,7 @@ services:
     command: taskmanager
     volumes:
       - flink-state:/state
+#      -  # mount logs folder to watch logs
     environment:
       - |
         FLINK_PROPERTIES=
